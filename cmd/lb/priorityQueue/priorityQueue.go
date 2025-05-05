@@ -10,6 +10,9 @@ type Pair struct {
 	priority int64
 }
 
+// It's not a universal priority queue specifically written for our case.
+// It uses some checks that can significantly affect performance with a large
+// number of items. Use it only for Load Balancer 
 type PriorityQueue struct {
 	values *list.List
 }
