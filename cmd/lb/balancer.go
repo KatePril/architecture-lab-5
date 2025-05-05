@@ -89,7 +89,6 @@ func forward(dst string, rw http.ResponseWriter, r *http.Request) error {
 func main() {
 	flag.Parse()
 
-	// TODO: Використовуйте дані про стан сервера, щоб підтримувати список тих серверів, яким можна відправляти запит.
 	for _, server := range serversPool {
 		server := server
 		go func() {
@@ -100,7 +99,6 @@ func main() {
 	}
 
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		// TODO: Реалізуйте свій алгоритм балансувальника.
 		forward(serversPool[0], rw, r)
 	}))
 
