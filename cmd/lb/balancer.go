@@ -38,9 +38,10 @@ func scheme() string {
 }
 
 func health(dst string) bool {
-	ctx, _ := context.WithTimeout(context.Background(), timeout)
-	req, _ := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s://%s/health", scheme(), dst), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	url := fmt.Sprintf("%s://%s/health", scheme(), dst)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false
@@ -52,7 +53,8 @@ func health(dst string) bool {
 }
 
 func forward(dst string, rw http.ResponseWriter, r *http.Request) error {
-	ctx, _ := context.WithTimeout(r.Context(), timeout)
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
 	fwdRequest := r.Clone(ctx)
 	fwdRequest.RequestURI = ""
 	fwdRequest.URL.Host = dst
