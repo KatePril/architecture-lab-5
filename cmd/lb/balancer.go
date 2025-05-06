@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/roman-mazur/architecture-practice-4-template/cmd/lb/priorityQueue"
 	"github.com/roman-mazur/architecture-practice-4-template/httptools"
 	"github.com/roman-mazur/architecture-practice-4-template/signal"
-	"github.com/roman-mazur/architecture-practice-4-template/cmd/lb/priorityQueue"
 )
 
 var (
@@ -102,7 +102,7 @@ func main() {
 				log.Println(server, "healthy:", healty)
 				if !healty {
 					queue.Remove(server)
-				} else if (!queue.Exists(server)) {
+				} else if !queue.Exists(server) {
 					queue.Push(server, 0)
 				}
 			}
@@ -111,8 +111,8 @@ func main() {
 
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
 		server, _ := queue.Front()
-		writed, _ := forward(server, rw, r)
-		queue.Update(server, writed)
+		written, _ := forward(server, rw, r)
+		queue.Update(server, written)
 	}))
 
 	log.Println("Starting load balancer...")

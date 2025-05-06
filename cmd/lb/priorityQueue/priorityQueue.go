@@ -6,25 +6,28 @@ import (
 )
 
 type Pair struct {
-	value string
+	value    string
 	priority int64
 }
 
 // It's not a universal priority queue specifically written for our case.
 // It uses some checks that can significantly affect performance with a large
-// number of items. Use it only for Load Balancer 
+// number of items. Use it only for Load Balancer
 type PriorityQueue struct {
 	values *list.List
 }
 
+// New initializes new priority queue
 func New() *PriorityQueue {
-	return &PriorityQueue{ list.New().Init() }
+	return &PriorityQueue{list.New().Init()}
 }
 
+// Clear clears elements of queue
 func (queue *PriorityQueue) Clear() {
 	queue.values.Init()
 }
 
+// find returns index of the given value
 func (queue *PriorityQueue) find(value string) (*list.Element, bool) {
 	for iter := queue.values.Front(); iter != nil; iter = iter.Next() {
 		pair, _ := iter.Value.(Pair)
@@ -35,21 +38,23 @@ func (queue *PriorityQueue) find(value string) (*list.Element, bool) {
 	return nil, false
 }
 
+// Push adds element to queue
 func (queue *PriorityQueue) Push(value string, priority int64) error {
-	if _, finded := queue.find(value); finded {
+	if _, found := queue.find(value); found {
 		return errors.New("Item duplication: " + value)
 	}
-	pair := Pair{ value, priority }
+	pair := Pair{value, priority}
 	for iter := queue.values.Front(); iter != nil; iter = iter.Next() {
 		if priority < iter.Value.(Pair).priority {
 			queue.values.InsertBefore(pair, iter)
 			return nil
 		}
 	}
-	queue.values.PushBack(Pair{ value, priority })
+	queue.values.PushBack(Pair{value, priority})
 	return nil
 }
 
+// Pop removes the last element from queue
 func (queue *PriorityQueue) Pop() (string, error) {
 	if queue.values.Len() == 0 {
 		return "", errors.New("queue is empty")
@@ -60,18 +65,20 @@ func (queue *PriorityQueue) Pop() (string, error) {
 	return pair.value, nil
 }
 
+// Remove removes element with given value from the queue
 func (queue *PriorityQueue) Remove(value string) error {
-	element, finded := queue.find(value)
-	if !finded {
+	element, found := queue.find(value)
+	if !found {
 		return errors.New("Item '" + value + "' does not exist")
 	}
 	queue.values.Remove(element)
 	return nil
 }
 
+// Update modifies order of values according to their priorities
 func (queue *PriorityQueue) Update(value string, priority int64) error {
-	element, finded := queue.find(value)
-	if !finded {
+	element, found := queue.find(value)
+	if !found {
 		return errors.New("Item '" + value + "' does not exist")
 	}
 	pair, _ := element.Value.(Pair)
@@ -86,6 +93,7 @@ func (queue *PriorityQueue) Update(value string, priority int64) error {
 	return nil
 }
 
+// Back returns the last element of queue
 func (queue *PriorityQueue) Back() (string, error) {
 	if queue.values.Len() == 0 {
 		return "", errors.New("queue is empty")
@@ -94,6 +102,7 @@ func (queue *PriorityQueue) Back() (string, error) {
 	return pair.value, nil
 }
 
+// Front returns the first element of queue
 func (queue *PriorityQueue) Front() (string, error) {
 	if queue.values.Len() == 0 {
 		return "", errors.New("queue is empty")
@@ -102,7 +111,8 @@ func (queue *PriorityQueue) Front() (string, error) {
 	return pair.value, nil
 }
 
-func (queue* PriorityQueue) Exists(value string) bool {
+// Exists checks if the element exists in queue
+func (queue *PriorityQueue) Exists(value string) bool {
 	_, exists := queue.find(value)
 	return exists
 }
