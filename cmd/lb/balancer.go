@@ -11,6 +11,7 @@ import (
 
 	"github.com/roman-mazur/architecture-practice-4-template/httptools"
 	"github.com/roman-mazur/architecture-practice-4-template/signal"
+	"github.com/roman-mazur/architecture-practice-4-template/cmd/lb/priorityQueue"
 )
 
 var (
@@ -38,9 +39,10 @@ func scheme() string {
 }
 
 func health(dst string) bool {
-	ctx, _ := context.WithTimeout(context.Background(), timeout)
-	req, _ := http.NewRequestWithContext(ctx, "GET",
-		fmt.Sprintf("%s://%s/health", scheme(), dst), nil)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	url := fmt.Sprintf("%s://%s/health", scheme(), dst)
+	req, _ := http.NewRequestWithContext(ctx, "GET", url, nil)
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false
@@ -51,8 +53,9 @@ func health(dst string) bool {
 	return true
 }
 
-func forward(dst string, rw http.ResponseWriter, r *http.Request) error {
-	ctx, _ := context.WithTimeout(r.Context(), timeout)
+func forward(dst string, rw http.ResponseWriter, r *http.Request) (int64, error) {
+	ctx, cancel := context.WithTimeout(r.Context(), timeout)
+	defer cancel()
 	fwdRequest := r.Clone(ctx)
 	fwdRequest.RequestURI = ""
 	fwdRequest.URL.Host = dst
@@ -72,34 +75,44 @@ func forward(dst string, rw http.ResponseWriter, r *http.Request) error {
 		log.Println("fwd", resp.StatusCode, resp.Request.URL)
 		rw.WriteHeader(resp.StatusCode)
 		defer resp.Body.Close()
-		_, err := io.Copy(rw, resp.Body)
+		written, err := io.Copy(rw, resp.Body)
 		if err != nil {
 			log.Printf("Failed to write response: %s", err)
 		}
-		return nil
+		return written, nil
 	} else {
 		log.Printf("Failed to get response from %s: %s", dst, err)
 		rw.WriteHeader(http.StatusServiceUnavailable)
-		return err
+		return 4, err
 	}
 }
 
 func main() {
 	flag.Parse()
 
-	// TODO: Використовуйте дані про стан сервера, щоб підтримувати список тих серверів, яким можна відправляти запит.
+	queue := priorityQueue.New()
+	for _, host := range serversPool {
+		queue.Push(host, 0)
+	}
+
 	for _, server := range serversPool {
-		server := server
 		go func() {
 			for range time.Tick(10 * time.Second) {
-				log.Println(server, "healthy:", health(server))
+				healty := health(server)
+				log.Println(server, "healthy:", healty)
+				if !healty {
+					queue.Remove(server)
+				} else if (!queue.Exists(server)) {
+					queue.Push(server, 0)
+				}
 			}
 		}()
 	}
 
 	frontend := httptools.CreateServer(*port, http.HandlerFunc(func(rw http.ResponseWriter, r *http.Request) {
-		// TODO: Реалізуйте свій алгоритм балансувальника.
-		forward(serversPool[0], rw, r)
+		server, _ := queue.Front()
+		writed, _ := forward(server, rw, r)
+		queue.Update(server, writed)
 	}))
 
 	log.Println("Starting load balancer...")
