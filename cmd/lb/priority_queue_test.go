@@ -15,7 +15,7 @@ func TestPriorityQueuePush(t *testing.T) {
 		expect      error
 	}{
 		{"test successful insertion", "server1:8080", 20, nil},
-		{"test successful insertion", "server2:8081", 100, nil},
+		{"test successful insertion", "server2:8080", 100, nil},
 		{"test error insertion", "server1:8080", 20, errors.New("Item duplication: server1:8080")},
 	}
 
@@ -57,14 +57,14 @@ func TestPriorityQueuePop(t *testing.T) {
 func TestPriorityQueueRemove(t *testing.T) {
 	queue := priorityQueue.New()
 	_ = queue.Push("server1:8080", 20)
-	_ = queue.Push("server2:8081", 100)
+	_ = queue.Push("server2:8080", 100)
 
 	tests := []struct {
 		name, value string
 		error       error
 	}{
 		{"test successful remove", "server1:8080", nil},
-		{"test error remove", "server2:8082", errors.New("Item 'server2:8082' does not exist")},
+		{"test error remove", "server2:8080", errors.New("Item 'server2:8080' does not exist")},
 	}
 
 	for _, tt := range tests {
@@ -79,7 +79,7 @@ func TestPriorityQueueRemove(t *testing.T) {
 
 func TestPriorityQueueUpdate(t *testing.T) {
 	queue := priorityQueue.New()
-	_ = queue.Push("server2:8081", 100)
+	_ = queue.Push("server2:8080", 100)
 	_ = queue.Push("server1:8080", 20)
 
 	tests := []struct {
@@ -88,8 +88,8 @@ func TestPriorityQueueUpdate(t *testing.T) {
 		error       error
 	}{
 		{"test successful update", "server1:8080", 100, nil},
-		{"test successful update", "server2:8081", 100, nil},
-		{"test error update", "server3:8082", 20, errors.New("Item 'server3:8082' does not exist")},
+		{"test successful update", "server2:8080", 100, nil},
+		{"test error update", "server3:8080", 20, errors.New("Item 'server3:8080' does not exist")},
 	}
 
 	for _, tt := range tests {
@@ -116,15 +116,15 @@ func TestPriorityQueueBack(t *testing.T) {
 	})
 
 	t.Run("test successful back", func(t *testing.T) {
-		_ = queue.Push("server2:8081", 100)
+		_ = queue.Push("server2:8080", 100)
 		_ = queue.Push("server1:8080", 20)
 		result, err := queue.Back()
 
 		if err != nil {
 			t.Errorf("got %v, want %v", err, nil)
 		}
-		if result != "server2:8081" {
-			t.Errorf("got %v, want %v", result, "server2:8081")
+		if result != "server2:8080" {
+			t.Errorf("got %v, want %v", result, "server2:8080")
 		}
 	})
 }
@@ -143,7 +143,7 @@ func TestPriorityQueueFront(t *testing.T) {
 	})
 
 	t.Run("test successful front", func(t *testing.T) {
-		_ = queue.Push("server2:8081", 100)
+		_ = queue.Push("server2:8080", 100)
 		_ = queue.Push("server1:8080", 20)
 		result, err := queue.Front()
 
@@ -165,7 +165,7 @@ func TestPriorityQueueExists(t *testing.T) {
 		expected    bool
 	}{
 		{"test value exists", "server1:8080", true},
-		{"test value doesn't exist", "server3:8082", false},
+		{"test value doesn't exist", "server3:8080", false},
 	}
 
 	for _, tt := range tests {
