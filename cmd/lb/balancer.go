@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/roman-mazur/architecture-practice-4-template/cmd/lb/priorityQueue"
-	"github.com/roman-mazur/architecture-practice-4-template/httptools"
-	"github.com/roman-mazur/architecture-practice-4-template/signal"
+	"github.com/KatePril/architecture-lab-4/cmd/lb/priorityQueue"
+	"github.com/KatePril/architecture-lab-4/httptools"
+	"github.com/KatePril/architecture-lab-4/signal"
 )
 
 var (
