@@ -57,7 +57,6 @@ func TestPriorityQueuePop(t *testing.T) {
 func TestPriorityQueueRemove(t *testing.T) {
 	queue := priorityQueue.New()
 	_ = queue.Push("server1:8080", 20)
-	_ = queue.Push("server2:8080", 100)
 
 	tests := []struct {
 		name, value string
