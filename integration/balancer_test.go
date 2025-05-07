@@ -19,12 +19,34 @@ func TestBalancer(t *testing.T) {
 		t.Skip("Integration test is not enabled")
 	}
 
-	// TODO: Реалізуйте інтеграційний тест для балансувальникка.
-	resp, err := client.Get(fmt.Sprintf("%s/api/v1/some-data", baseAddress))
-	if err != nil {
-		t.Error(err)
+	// Перевіряємо, чи балансувальник правильно розподіляє запити між серверами
+	servers := map[string]int{
+		"server1:8080": 0,
+		"server2:8080": 0,
+		"server3:8080": 0,
 	}
-	t.Logf("response from [%s]", resp.Header.Get("lb-from"))
+
+	for i := 0; i < 10; i++ {
+		resp, err := client.Get(fmt.Sprintf("%s/api/v1/some-data", baseAddress))
+		if err != nil {
+			t.Fatalf("Request failed: %v", err)
+		}
+		defer resp.Body.Close()
+
+		from := resp.Header.Get("lb-from")
+		if from == "" {
+			t.Errorf("Missing 'lb-from' header in response")
+		} else {
+			servers[from]++
+		}
+	}
+
+	// Перевіряємо, чи всі сервери отримали хоча б один запит
+	for server, count := range servers {
+		if count == 0 {
+			t.Errorf("Server %s did not receive any requests", server)
+		}
+	}
 }
 
 func BenchmarkBalancer(b *testing.B) {
