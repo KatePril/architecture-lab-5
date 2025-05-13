@@ -1,4 +1,4 @@
-Architecture lab 4
+Architecture lab 5
 ---
 Authored by IM-31 students:
 - Maksym Zinets
