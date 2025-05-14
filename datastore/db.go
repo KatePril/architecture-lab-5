@@ -2,7 +2,6 @@ package datastore
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,79 +9,111 @@ import (
 )
 
 const outFileName = "current-data"
+const maxFileSize = 10 * 1024 * 1024 // 10 МБ
 
 var ErrNotFound = fmt.Errorf("record does not exist")
 
-type hashIndex map[string]int64
+type fileRef struct {
+	file   *os.File
+	offset int64
+	name   string
+}
 
 type Db struct {
-	out       *os.File
-	outOffset int64
+	dir   string
+	files []*fileRef // всі відкриті файли
+	curr  *fileRef   // поточний файл для запису
+	index map[string]entryRef
+}
 
-	index hashIndex
+type entryRef struct {
+	fileIndex int
+	offset    int64
 }
 
 func Open(dir string) (*Db, error) {
-	outputPath := filepath.Join(dir, outFileName)
-	f, err := os.OpenFile(outputPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
+	db := &Db{
+		dir:   dir,
+		files: []*fileRef{},
+		index: make(map[string]entryRef),
+	}
+
+	// Знайти всі файли формату current-data-*
+	files, err := filepath.Glob(filepath.Join(dir, outFileName+"-*"))
 	if err != nil {
 		return nil, err
 	}
-	db := &Db{
-		out:   f,
-		index: make(hashIndex),
+
+	for i, path := range files {
+		f, err := os.Open(path)
+		if err != nil {
+			return nil, err
+		}
+
+		ref := &fileRef{file: f, offset: 0, name: filepath.Base(path)}
+		db.files = append(db.files, ref)
+
+		if err := db.recoverFile(f, i); err != nil && err != io.EOF {
+			return nil, err
+		}
+		f.Close()
 	}
-	err = db.recover()
-	if err != nil && err != io.EOF {
+
+	// Відкрити останній файл для дозапису або створити новий
+	if err := db.newFile(); err != nil {
 		return nil, err
 	}
 	return db, nil
 }
 
-func (db *Db) recover() error {
-	f, err := os.Open(db.out.Name())
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-
+func (db *Db) recoverFile(f *os.File, fileIndex int) error {
 	in := bufio.NewReader(f)
-	for err == nil {
-		var (
-			record entry
-			n      int
-		)
-		n, err = record.DecodeFromReader(in)
-		if errors.Is(err, io.EOF) {
-			if n != 0 {
-				return fmt.Errorf("corrupted file")
-			}
+	var offset int64 = 0
+
+	for {
+		var record entry
+		n, err := record.DecodeFromReader(in)
+		if err == io.EOF {
 			break
 		}
+		if err != nil {
+			return err
+		}
 
-		db.index[record.key] = db.outOffset
-		db.outOffset += int64(n)
+		db.index[record.key] = entryRef{
+			fileIndex: fileIndex,
+			offset:    offset,
+		}
+		offset += int64(n)
+	}
+	return nil
+}
+
+func (db *Db) Close() error {
+	var err error
+	for _, f := range db.files {
+		if f.file.Close() != nil {
+			err = f.file.Close()
+			return err
+		}
 	}
 	return err
 }
 
-func (db *Db) Close() error {
-	return db.out.Close()
-}
-
 func (db *Db) Get(key string) (string, error) {
-	position, ok := db.index[key]
+	ref, ok := db.index[key]
 	if !ok {
 		return "", ErrNotFound
 	}
 
-	file, err := os.Open(db.out.Name())
+	fileRef := db.files[ref.fileIndex]
+	file, err := os.Open(filepath.Join(db.dir, fileRef.name))
 	if err != nil {
 		return "", err
 	}
 	defer file.Close()
 
-	_, err = file.Seek(position, 0)
+	_, err = file.Seek(ref.offset, io.SeekStart)
 	if err != nil {
 		return "", err
 	}
@@ -94,23 +125,55 @@ func (db *Db) Get(key string) (string, error) {
 	return record.value, nil
 }
 
+func (db *Db) newFile() error {
+	index := len(db.files)
+	filename := fmt.Sprintf("current-data-%d", index)
+	path := filepath.Join(db.dir, filename)
+
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+	if err != nil {
+		return err
+	}
+
+	ref := &fileRef{file: f, offset: 0, name: filename}
+	db.files = append(db.files, ref)
+	db.curr = ref
+	return nil
+}
+
 func (db *Db) Put(key, value string) error {
-	e := entry{
-		key:   key,
-		value: value,
+	e := entry{key: key, value: value}
+	data := e.Encode()
+
+	// Ротація файлу, якщо перевищено розмір
+	if db.curr.offset+int64(len(data)) > maxFileSize {
+		db.curr.file.Close()
+		if err := db.newFile(); err != nil {
+			return err
+		}
 	}
-	n, err := db.out.Write(e.Encode())
-	if err == nil {
-		db.index[key] = db.outOffset
-		db.outOffset += int64(n)
+
+	n, err := db.curr.file.Write(data)
+	if err != nil {
+		return err
 	}
-	return err
+
+	ref := entryRef{
+		fileIndex: len(db.files) - 1,
+		offset:    db.curr.offset,
+	}
+	db.index[key] = ref
+	db.curr.offset += int64(n)
+	return nil
 }
 
 func (db *Db) Size() (int64, error) {
-	info, err := db.out.Stat()
-	if err != nil {
-		return 0, err
+	var size int64 = 0
+	for _, f := range db.files {
+		fileStat, err := f.file.Stat()
+		if err == nil {
+			size += int64(fileStat.Size())
+		}
 	}
-	return info.Size(), nil
+	return size, nil
 }
