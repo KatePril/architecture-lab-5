@@ -1,179 +1,129 @@
 package datastore
 
 import (
-	"bufio"
-	"fmt"
-	"io"
+	"errors"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
-const outFileName = "current-data"
-const maxFileSize = 10 * 1024 * 1024 // 10 МБ
+const outFileBase = "current-data-"
+const maxFileSize = 10 * 1024 * 1024
+const mode = os.O_RDWR | os.O_CREATE
 
-var ErrNotFound = fmt.Errorf("record does not exist")
+var ErrNotFound = errors.New("record does not exist")
 
-type fileRef struct {
-	file   *os.File
+type KeyStorage struct {
+	file *os.File
 	offset int64
-	name   string
 }
 
 type Db struct {
-	dir   string
-	files []*fileRef // всі відкриті файли
-	curr  *fileRef   // поточний файл для запису
-	index map[string]entryRef
+	directory string
+	files []*os.File
+	offset map[string]KeyStorage
 }
 
-type entryRef struct {
-	fileIndex int
-	offset    int64
-}
-
-func Open(dir string) (*Db, error) {
-	db := &Db{
-		dir:   dir,
-		files: []*fileRef{},
-		index: make(map[string]entryRef),
+func Open(directory string) (*Db, error) {
+	database := &Db{
+		directory: directory,
+		files: make([]*os.File, 0),
+		offset: make(map[string]KeyStorage),
 	}
-
-	// Знайти всі файли формату current-data-*
-	files, err := filepath.Glob(filepath.Join(dir, outFileName+"-*"))
-	if err != nil {
-		return nil, err
+	pattern := filepath.Join(directory, outFileBase + "*")
+	files, _ := filepath.Glob(pattern)
+	for _, filepath := range files {
+		if file, err := os.OpenFile(filepath, os.O_RDWR, 0o600); err == nil {
+			database.files = append(database.files, file)
+			if database.recover(file) == nil {
+				continue
+			}
+		}
+		database.Close()
+		return nil, errors.New("cannot read file " + filepath)
 	}
-
-	for i, path := range files {
-		f, err := os.Open(path)
+	if len(database.files) == 0 {
+		file, err := database.newFile()
 		if err != nil {
 			return nil, err
 		}
-
-		ref := &fileRef{file: f, offset: 0, name: filepath.Base(path)}
-		db.files = append(db.files, ref)
-
-		if err := db.recoverFile(f, i); err != nil && err != io.EOF {
-			return nil, err
-		}
-		f.Close()
+		database.files = append(database.files, file)
 	}
-
-	// Відкрити останній файл для дозапису або створити новий
-	if err := db.newFile(); err != nil {
-		return nil, err
-	}
-	return db, nil
+	return database, nil
 }
 
-func (db *Db) recoverFile(f *os.File, fileIndex int) error {
-	in := bufio.NewReader(f)
-	var offset int64 = 0
-
-	for {
-		var record entry
-		n, err := record.DecodeFromReader(in)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return err
-		}
-
-		db.index[record.key] = entryRef{
-			fileIndex: fileIndex,
-			offset:    offset,
-		}
-		offset += int64(n)
+func (database *Db) recover(file *os.File) error {
+	var offset int64
+	for pair := range Iterate(file) {
+		database.offset[pair.key] = KeyStorage{ file, offset }
+		offset += int64(len(pair.key) + len(pair.value) + 8)
 	}
 	return nil
 }
 
-func (db *Db) Close() error {
-	var err error
-	for _, f := range db.files {
-		if f.file.Close() != nil {
-			err = f.file.Close()
+func (database *Db) Close() error {
+	for _, file := range database.files {
+		if err := file.Close(); err != nil {
 			return err
 		}
 	}
-	return err
+	return nil
 }
 
-func (db *Db) Get(key string) (string, error) {
-	ref, ok := db.index[key]
-	if !ok {
+func (database *Db) newFile() (*os.File, error) {
+	filename := outFileBase + strconv.Itoa(len(database.files))
+	filepath := filepath.Join(database.directory, filename)
+	file, err := os.OpenFile(filepath, mode, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+func (database *Db) Get(key string) (string, error) {
+	keyStorage, exists := database.offset[key]
+	if !exists {
 		return "", ErrNotFound
 	}
-
-	fileRef := db.files[ref.fileIndex]
-	file, err := os.Open(filepath.Join(db.dir, fileRef.name))
+	entry, err := ReadEntry(keyStorage.file, keyStorage.offset)
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
-
-	_, err = file.Seek(ref.offset, io.SeekStart)
-	if err != nil {
-		return "", err
-	}
-
-	var record entry
-	if _, err = record.DecodeFromReader(bufio.NewReader(file)); err != nil {
-		return "", err
-	}
-	return record.value, nil
+	return entry.value, nil
 }
 
-func (db *Db) newFile() error {
-	index := len(db.files)
-	filename := fmt.Sprintf("current-data-%d", index)
-	path := filepath.Join(db.dir, filename)
-
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o600)
+func (database *Db) Put(key, value string) error {
+	file := database.files[len(database.files) - 1]
+	fileStat, err := file.Stat()
 	if err != nil {
 		return err
 	}
-
-	ref := &fileRef{file: f, offset: 0, name: filename}
-	db.files = append(db.files, ref)
-	db.curr = ref
-	return nil
-}
-
-func (db *Db) Put(key, value string) error {
-	e := entry{key: key, value: value}
-	data := e.Encode()
-
-	// Ротація файлу, якщо перевищено розмір
-	if db.curr.offset+int64(len(data)) > maxFileSize {
-		db.curr.file.Close()
-		if err := db.newFile(); err != nil {
+	fileSize := fileStat.Size()
+	if fileSize >= maxFileSize {
+		file, err = database.newFile()
+		if err != nil {
 			return err
 		}
+		database.files = append(database.files, file)
+		fileSize = 0
 	}
-
-	n, err := db.curr.file.Write(data)
+	data := Encode(entry{ key, value })
+	_, err = file.WriteAt(data, fileSize)
 	if err != nil {
 		return err
 	}
-
-	ref := entryRef{
-		fileIndex: len(db.files) - 1,
-		offset:    db.curr.offset,
-	}
-	db.index[key] = ref
-	db.curr.offset += int64(n)
+	database.offset[key] = KeyStorage{ file, fileSize }
 	return nil
 }
 
-func (db *Db) Size() (int64, error) {
-	var size int64 = 0
-	for _, f := range db.files {
-		fileStat, err := f.file.Stat()
-		if err == nil {
-			size += int64(fileStat.Size())
+func (database *Db) Size() (int64, error) {
+	var total int64
+	for _, file := range database.files {
+		stat, err := file.Stat()
+		if err != nil {
+			return 0, err
 		}
+		total += stat.Size()
 	}
-	return size, nil
+	return total, nil
 }

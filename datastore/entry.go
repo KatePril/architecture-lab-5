@@ -1,58 +1,70 @@
 package datastore
 
 import (
-	"bufio"
 	"encoding/binary"
-	"errors"
-	"fmt"
 	"io"
+	"iter"
+	"os"
 )
 
 type entry struct {
 	key, value string
 }
 
-// 0           4    8     kl+8  kl+12     <-- offset
-// (full size) (kl) (key) (vl)  (value)
-// 4           4    ....  4     .....     <-- length
+// 0    4     4+kl  4+kl+4     <-- offset
+// (kl) (key) (vl)  (value)
+// 4    ..... 4     ......     <-- length
 
-func (e *entry) Encode() []byte {
+func Encode(e entry) []byte {
 	kl, vl := len(e.key), len(e.value)
-	size := kl + vl + 12
+	size := kl + vl + 8
 	res := make([]byte, size)
-	binary.LittleEndian.PutUint32(res, uint32(size))
-	binary.LittleEndian.PutUint32(res[4:], uint32(kl))
-	copy(res[8:], e.key)
-	binary.LittleEndian.PutUint32(res[kl+8:], uint32(vl))
-	copy(res[kl+12:], e.value)
+	binary.LittleEndian.PutUint32(res, uint32(kl))
+	copy(res[4:], e.key)
+	binary.LittleEndian.PutUint32(res[kl + 4:], uint32(vl))
+	copy(res[kl + 8:], e.value)
 	return res
 }
 
-func (e *entry) Decode(input []byte) {
-	e.key = decodeString(input[4:])
-	e.value = decodeString(input[len(e.key)+8:])
-}
-
-func decodeString(v []byte) string {
-	l := binary.LittleEndian.Uint32(v)
-	buf := make([]byte, l)
-	copy(buf, v[4:4+int(l)])
-	return string(buf)
-}
-
-func (e *entry) DecodeFromReader(in *bufio.Reader) (int, error) {
-	sizeBuf, err := in.Peek(4)
+func readValue(file io.ReaderAt, offset int64) (string, error) {	
+	lengthBuffer := make([]byte, 4)
+	_, err := file.ReadAt(lengthBuffer, offset)
 	if err != nil {
-		if errors.Is(err, io.EOF) {
-			return 0, err
+		return "", err
+	}
+	length := int64(binary.LittleEndian.Uint32(lengthBuffer))
+	data := make([]byte, length)
+	_, err = file.ReadAt(data, offset + 4)
+	if err != nil {
+		return "", err
+	}
+	return string(data), nil
+}
+
+func ReadEntry(file io.ReaderAt, offset int64) (entry, error) {	
+	key, err := readValue(file, offset)
+	if err != nil {
+		return entry{ }, err
+	}
+	value, err := readValue(file, offset + int64(len(key)) + 4)
+	if err != nil {
+		return entry{ }, err
+	}
+	return entry{ key, value }, nil
+}
+
+func Iterate(file *os.File) iter.Seq[entry] {
+	return func(yield func(entry) bool) {
+		var offset int64
+		for {
+			e, err := ReadEntry(file, offset)
+			if err != nil {
+				return
+			}
+			offset += int64(len(e.key) + len(e.value) + 8)
+			if !yield(e) {
+				return
+			}
 		}
-		return 0, fmt.Errorf("DecodeFromReader, cannot read size: %w", err)
 	}
-	buf := make([]byte, int(binary.LittleEndian.Uint32(sizeBuf)))
-	n, err := in.Read(buf[:])
-	if err != nil {
-		return n, fmt.Errorf("DecodeFromReader, cannot read record: %w", err)
-	}
-	e.Decode(buf)
-	return n, nil
 }
