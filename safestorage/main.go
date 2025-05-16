@@ -20,16 +20,24 @@ type SafeStorage struct {
 	commands chan command	
 }
 
+var cases = map[string] func(Storage, command) result {
+	"get": func(storage Storage, cmd command) result {
+		value, err := storage.Get(cmd.key)
+		return result{ value, err }
+	},
+	"put": func(storage Storage, cmd command) result {
+		err := storage.Put(cmd.key, cmd.value)
+		return result{ "", err }
+	},
+}
+
 func Init(storage Storage) *SafeStorage {
 	safeStorage := SafeStorage{ storage, make(chan command) }
 	go func ()  {
 		for cmd := range safeStorage.commands {
-			if cmd.action == "get" {
-				value, err := storage.Get(cmd.key)
-				cmd.result <- result{ value, err }
-			} else if cmd.action == "put" {
-				err := storage.Put(cmd.key, cmd.value)
-				cmd.result <- result{ "", err }
+			produce, exists := cases[cmd.action]
+			if exists {
+				cmd.result <- produce(storage, cmd)
 			}
 		}
 	}()
