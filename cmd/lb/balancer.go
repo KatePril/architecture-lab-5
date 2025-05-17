@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/KatePril/architecture-lab-4/cmd/lb/priorityQueue"
-	"github.com/KatePril/architecture-lab-4/httptools"
-	"github.com/KatePril/architecture-lab-4/signal"
+	"github.com/KatePril/architecture-lab-5/cmd/lb/priorityQueue"
+	"github.com/KatePril/architecture-lab-5/httptools"
+	"github.com/KatePril/architecture-lab-5/signal"
 )
 
 var (

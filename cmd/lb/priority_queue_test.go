@@ -2,7 +2,7 @@ package main
 
 import (
 	"errors"
-	"github.com/KatePril/architecture-lab-4/cmd/lb/priorityQueue"
+	"github.com/KatePril/architecture-lab-5/cmd/lb/priorityQueue"
 	"testing"
 )
 
