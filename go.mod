@@ -1,3 +1,3 @@
-module github.com/KatePril/architecture-lab-4
+module github.com/KatePril/architecture-lab-5
 
 go 1.24
