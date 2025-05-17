@@ -1,116 +1,129 @@
 package datastore
 
 import (
-	"bufio"
 	"errors"
-	"fmt"
-	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
-const outFileName = "current-data"
+const outFileBase = "current-data-"
+const maxFileSize = 10 * 1024 * 1024
+const mode = os.O_RDWR | os.O_CREATE
 
-var ErrNotFound = fmt.Errorf("record does not exist")
+var ErrNotFound = errors.New("record does not exist")
 
-type hashIndex map[string]int64
-
-type Db struct {
-	out       *os.File
-	outOffset int64
-
-	index hashIndex
+type KeyStorage struct {
+	file *os.File
+	offset int64
 }
 
-func Open(dir string) (*Db, error) {
-	outputPath := filepath.Join(dir, outFileName)
-	f, err := os.OpenFile(outputPath, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0o600)
+type Db struct {
+	directory string
+	files []*os.File
+	offset map[string]KeyStorage
+}
+
+func Open(directory string) (*Db, error) {
+	database := &Db{
+		directory: directory,
+		files: make([]*os.File, 0),
+		offset: make(map[string]KeyStorage),
+	}
+	pattern := filepath.Join(directory, outFileBase + "*")
+	files, _ := filepath.Glob(pattern)
+	for _, filepath := range files {
+		if file, err := os.OpenFile(filepath, os.O_RDWR, 0o600); err == nil {
+			database.files = append(database.files, file)
+			if database.recover(file) == nil {
+				continue
+			}
+		}
+		database.Close()
+		return nil, errors.New("cannot read file " + filepath)
+	}
+	if len(database.files) == 0 {
+		file, err := database.newFile()
+		if err != nil {
+			return nil, err
+		}
+		database.files = append(database.files, file)
+	}
+	return database, nil
+}
+
+func (database *Db) recover(file *os.File) error {
+	var offset int64
+	for pair := range Iterate(file) {
+		database.offset[pair.key] = KeyStorage{ file, offset }
+		offset += int64(len(pair.key) + len(pair.value) + 8)
+	}
+	return nil
+}
+
+func (database *Db) Close() error {
+	for _, file := range database.files {
+		if err := file.Close(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (database *Db) newFile() (*os.File, error) {
+	filename := outFileBase + strconv.Itoa(len(database.files))
+	filepath := filepath.Join(database.directory, filename)
+	file, err := os.OpenFile(filepath, mode, 0o600)
 	if err != nil {
 		return nil, err
 	}
-	db := &Db{
-		out:   f,
-		index: make(hashIndex),
-	}
-	err = db.recover()
-	if err != nil && err != io.EOF {
-		return nil, err
-	}
-	return db, nil
+	return file, nil
 }
 
-func (db *Db) recover() error {
-	f, err := os.Open(db.out.Name())
+func (database *Db) Get(key string) (string, error) {
+	keyStorage, exists := database.offset[key]
+	if !exists {
+		return "", ErrNotFound
+	}
+	entry, err := ReadEntry(keyStorage.file, keyStorage.offset)
+	if err != nil {
+		return "", err
+	}
+	return entry.value, nil
+}
+
+func (database *Db) Put(key, value string) error {
+	file := database.files[len(database.files) - 1]
+	fileStat, err := file.Stat()
 	if err != nil {
 		return err
 	}
-	defer f.Close()
-
-	in := bufio.NewReader(f)
-	for err == nil {
-		var (
-			record entry
-			n      int
-		)
-		n, err = record.DecodeFromReader(in)
-		if errors.Is(err, io.EOF) {
-			if n != 0 {
-				return fmt.Errorf("corrupted file")
-			}
-			break
+	fileSize := fileStat.Size()
+	if fileSize >= maxFileSize {
+		file, err = database.newFile()
+		if err != nil {
+			return err
 		}
-
-		db.index[record.key] = db.outOffset
-		db.outOffset += int64(n)
+		database.files = append(database.files, file)
+		fileSize = 0
 	}
-	return err
-}
-
-func (db *Db) Close() error {
-	return db.out.Close()
-}
-
-func (db *Db) Get(key string) (string, error) {
-	position, ok := db.index[key]
-	if !ok {
-		return "", ErrNotFound
-	}
-
-	file, err := os.Open(db.out.Name())
+	data := Encode(entry{ key, value })
+	_, err = file.WriteAt(data, fileSize)
 	if err != nil {
-		return "", err
+		return err
 	}
-	defer file.Close()
-
-	_, err = file.Seek(position, 0)
-	if err != nil {
-		return "", err
-	}
-
-	var record entry
-	if _, err = record.DecodeFromReader(bufio.NewReader(file)); err != nil {
-		return "", err
-	}
-	return record.value, nil
+	database.offset[key] = KeyStorage{ file, fileSize }
+	return nil
 }
 
-func (db *Db) Put(key, value string) error {
-	e := entry{
-		key:   key,
-		value: value,
+func (database *Db) Size() (int64, error) {
+	var total int64
+	for _, file := range database.files {
+		stat, err := file.Stat()
+		if err != nil {
+			return 0, err
+		}
+		total += stat.Size()
 	}
-	n, err := db.out.Write(e.Encode())
-	if err == nil {
-		db.index[key] = db.outOffset
-		db.outOffset += int64(n)
-	}
-	return err
-}
-
-func (db *Db) Size() (int64, error) {
-	info, err := db.out.Stat()
-	if err != nil {
-		return 0, err
-	}
-	return info.Size(), nil
+	return total, nil
 }
