@@ -14,23 +14,23 @@ const mode = os.O_RDWR | os.O_CREATE
 var ErrNotFound = errors.New("record does not exist")
 
 type KeyStorage struct {
-	file *os.File
+	file   *os.File
 	offset int64
 }
 
 type Db struct {
 	directory string
-	files []*os.File
-	offset map[string]KeyStorage
+	files     []*os.File
+	offset    map[string]KeyStorage
 }
 
 func Open(directory string) (*Db, error) {
 	database := &Db{
 		directory: directory,
-		files: make([]*os.File, 0),
-		offset: make(map[string]KeyStorage),
+		files:     make([]*os.File, 0),
+		offset:    make(map[string]KeyStorage),
 	}
-	pattern := filepath.Join(directory, outFileBase + "*")
+	pattern := filepath.Join(directory, outFileBase+"*")
 	files, _ := filepath.Glob(pattern)
 	for _, filepath := range files {
 		if file, err := os.OpenFile(filepath, os.O_RDWR, 0o600); err == nil {
@@ -55,8 +55,8 @@ func Open(directory string) (*Db, error) {
 func (database *Db) recover(file *os.File) error {
 	var offset int64
 	for pair := range Iterate(file) {
-		database.offset[pair.key] = KeyStorage{ file, offset }
-		offset += int64(len(pair.key) + len(pair.value) + 8)
+		database.offset[pair.key] = KeyStorage{file, offset}
+		offset += int64(len(pair.key) + len(pair.value) + 9)
 	}
 	return nil
 }
@@ -89,11 +89,14 @@ func (database *Db) Get(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if entry.isDeleted == 1 {
+		return "", ErrNotFound
+	}
 	return entry.value, nil
 }
 
 func (database *Db) Put(key, value string) error {
-	file := database.files[len(database.files) - 1]
+	file := database.files[len(database.files)-1]
 	fileStat, err := file.Stat()
 	if err != nil {
 		return err
@@ -107,12 +110,12 @@ func (database *Db) Put(key, value string) error {
 		database.files = append(database.files, file)
 		fileSize = 0
 	}
-	data := Encode(entry{ key, value })
+	data := Encode(entry{key, value, 0})
 	_, err = file.WriteAt(data, fileSize)
 	if err != nil {
 		return err
 	}
-	database.offset[key] = KeyStorage{ file, fileSize }
+	database.offset[key] = KeyStorage{file, fileSize}
 	return nil
 }
 
