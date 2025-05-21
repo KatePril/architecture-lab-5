@@ -53,10 +53,9 @@ func Open(directory string) (*Db, error) {
 }
 
 func (database *Db) recover(file *os.File) error {
-	var offset int64
-	for pair := range Iterate(file) {
-		database.offset[pair.key] = KeyStorage{file, offset}
-		offset += int64(len(pair.key) + len(pair.value) + 9)
+	for value := range Iterate(file) {
+		key := value.data.getId()
+		database.offset[key] = KeyStorage{ file, value.offset }
 	}
 	return nil
 }
@@ -91,18 +90,22 @@ func (database *Db) Get(key string) (string, error) {
 	if !exists {
 		return "", ErrNotFound
 	}
-	entry, err := ReadEntry(keyStorage.file, keyStorage.offset)
+	data, _, err := ReadRecord(keyStorage.file, keyStorage.offset)
 	if err != nil {
 		return "", err
 	}
-	if entry.kind == 1 {
+	switch record := data.(type) {
+	case entryRecord:
+		return record.value, nil
+	case deleteRecord:
 		return "", ErrNotFound
+	default:
+		return "", nil
 	}
-	return entry.value, nil
 }
 
 func (database *Db) Put(key, value string) error {
-	return database.putEntry(key, value, 0)
+	return database.putEntry(entryRecord{ key, value })
 }
 
 func (database *Db) Delete(key string) error {
@@ -111,10 +114,10 @@ func (database *Db) Delete(key string) error {
 		return nil
 	}
 
-	return database.putEntry(key, "", 1)
+	return database.putEntry(deleteRecord(key))
 }
 
-func (database *Db) putEntry(key, value string, kind uint8) error {
+func (database *Db) putEntry(entry record) error {
 	file := database.files[len(database.files)-1]
 	fileStat, err := file.Stat()
 	if err != nil {
@@ -129,13 +132,12 @@ func (database *Db) putEntry(key, value string, kind uint8) error {
 		database.files = append(database.files, file)
 		fileSize = 0
 	}
-
-	data := Encode(entry{key, value, kind})
+	data := Encode(entry)
 	_, err = file.WriteAt(data, fileSize)
 	if err != nil {
 		return err
 	}
-	database.offset[key] = KeyStorage{file, fileSize}
+	database.offset[entry.getId()] = KeyStorage{file, fileSize}
 	return nil
 }
 
