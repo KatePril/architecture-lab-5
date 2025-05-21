@@ -9,6 +9,19 @@ on:
       - main
 
 jobs:
+  check-code-style:
+      runs-on: ubuntu-latest
+  
+      steps:
+        - name: Checkout
+          uses: actions/checkout@v4
+  
+        - name: Set up docker
+          uses: docker/setup-buildx-action@v3
+  
+        - name: Check gofmt formatting
+          run: gofmt -d .
+  
   build-and-test:
     runs-on: ubuntu-latest
 
