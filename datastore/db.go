@@ -56,7 +56,7 @@ func (database *Db) recover(file *os.File) error {
 	var offset int64
 	for pair := range Iterate(file) {
 		database.offset[pair.key] = KeyStorage{ file, offset }
-		offset += int64(len(pair.key) + len(pair.value) + 8)
+		offset += int64(len(pair.key) + len(pair.value) + 9)
 	}
 	return nil
 }
@@ -107,7 +107,7 @@ func (database *Db) Put(key, value string) error {
 		database.files = append(database.files, file)
 		fileSize = 0
 	}
-	data := Encode(entry{ key, value })
+	data := Encode(entry{ key, value, 0 })
 	_, err = file.WriteAt(data, fileSize)
 	if err != nil {
 		return err
