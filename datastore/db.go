@@ -74,7 +74,7 @@ func (database *Db) newFile() (*os.File, error) {
 	filename := outFileBase + strconv.Itoa(len(database.files))
 	filepath := filepath.Join(database.directory, filename)
 
-	err := os.MkdirAll(database.directory, 0o755)
+	err := os.MkdirAll(database.directory, 0o700)
 	if err != nil {
 		return nil, err
 	}
