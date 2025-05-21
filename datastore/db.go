@@ -73,6 +73,12 @@ func (database *Db) Close() error {
 func (database *Db) newFile() (*os.File, error) {
 	filename := outFileBase + strconv.Itoa(len(database.files))
 	filepath := filepath.Join(database.directory, filename)
+
+	err := os.MkdirAll(database.directory, 0o755)
+	if err != nil {
+		return nil, err
+	}
+
 	file, err := os.OpenFile(filepath, mode, 0o600)
 	if err != nil {
 		return nil, err
