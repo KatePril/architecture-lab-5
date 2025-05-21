@@ -119,6 +119,36 @@ func (database *Db) Put(key, value string) error {
 	return nil
 }
 
+func (database *Db) Delete(key string) error {
+	_, exists := database.offset[key]
+	if !exists {
+		return nil
+	}
+
+	file := database.files[len(database.files)-1]
+	fileStat, err := file.Stat()
+	if err != nil {
+		return err
+	}
+	fileSize := fileStat.Size()
+	if fileSize >= maxFileSize {
+		file, err = database.newFile()
+		if err != nil {
+			return err
+		}
+		database.files = append(database.files, file)
+		fileSize = 0
+	}
+
+	data := Encode(entry{key, "", 1})
+	_, err = file.WriteAt(data, fileSize)
+	if err != nil {
+		return err
+	}
+	database.offset[key] = KeyStorage{file, fileSize}
+	return nil
+}
+
 func (database *Db) Size() (int64, error) {
 	var total int64
 	for _, file := range database.files {
