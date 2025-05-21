@@ -20,7 +20,14 @@ jobs:
           uses: docker/setup-buildx-action@v3
   
         - name: Check gofmt formatting
-          run: gofmt -d .
+          run: |
+            problems=$(gofmt -d .)
+            if [ -n "$problems" ]; then
+              echo "$problems"
+              exit 1
+            else
+              echo "No problems in source code found"
+            fi
   
   build-and-test:
     runs-on: ubuntu-latest
