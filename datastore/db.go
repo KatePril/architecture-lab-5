@@ -95,7 +95,7 @@ func (database *Db) Get(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if entry.isDeleted == 1 {
+	if entry.kind == 1 {
 		return "", ErrNotFound
 	}
 	return entry.value, nil

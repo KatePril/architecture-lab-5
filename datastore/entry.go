@@ -9,13 +9,12 @@ import (
 
 type entry struct {
 	key, value string
-	kind uint8
+	kind       uint8
 }
 
 // 0      1    5     5+kl  9+kl     <-- offset
 // (flag) (kl) (key) (vl)  (value)
 // 1      4    ..... 4     ......   <-- length
-
 
 func Encode(e entry) []byte {
 	kl, vl := len(e.key), len(e.value)
@@ -24,8 +23,8 @@ func Encode(e entry) []byte {
 	res[0] = e.kind
 	binary.LittleEndian.PutUint32(res[1:], uint32(kl))
 	copy(res[5:], e.key)
-	binary.LittleEndian.PutUint32(res[kl + 5:], uint32(vl))
-	copy(res[kl + 9:], e.value)
+	binary.LittleEndian.PutUint32(res[kl+5:], uint32(vl))
+	copy(res[kl+9:], e.value)
 	return res
 }
 
@@ -44,11 +43,11 @@ func readValue(file io.ReaderAt, offset int64) (string, error) {
 	return string(data), nil
 }
 
-func ReadEntry(file io.ReaderAt, offset int64) (entry, error) {	
+func ReadEntry(file io.ReaderAt, offset int64) (entry, error) {
 	kindBuffer := make([]byte, 1)
 	file.ReadAt(kindBuffer, offset)
 	kind := kindBuffer[0]
-	key, err := readValue(file, offset + 1)
+	key, err := readValue(file, offset+1)
 	if err != nil {
 		return entry{}, err
 	}
@@ -56,12 +55,12 @@ func ReadEntry(file io.ReaderAt, offset int64) (entry, error) {
 	if err != nil {
 		return entry{}, err
 	}
-	value, err := readValue(file, offset + int64(len(key)) + 5)
-	if err != nil {
-		return entry{}, err
+	value, err1 := readValue(file, offset+int64(len(key))+5)
+	if err1 != nil {
+		return entry{}, err1
 	}
 
-	return entry{ key, value, kind }, nil
+	return entry{key, value, kind}, nil
 }
 
 func Iterate(file *os.File) iter.Seq[entry] {
