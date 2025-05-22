@@ -51,13 +51,9 @@ func ReadEntry(file io.ReaderAt, offset int64) (entry, error) {
 	if err != nil {
 		return entry{}, err
 	}
-	value, err := readValue(file, offset+int64(len(key))+4)
+	value, err := readValue(file, offset+int64(len(key))+5)
 	if err != nil {
 		return entry{}, err
-	}
-	value, err1 := readValue(file, offset+int64(len(key))+5)
-	if err1 != nil {
-		return entry{}, err1
 	}
 
 	return entry{key, value, kind}, nil
