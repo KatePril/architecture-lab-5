@@ -9,22 +9,23 @@ import (
 
 type entry struct {
 	key, value string
-	isDeleted  byte
+	kind uint8
 }
 
-// 0    4     4+kl  4+kl+4   4+kl+4+vl   <-- offset
-// (kl) (key) (vl)  (value)  (isDeleted)
-// 4    ..... 4     ......   1           <-- length
+// 0      1    5     5+kl  9+kl     <-- offset
+// (flag) (kl) (key) (vl)  (value)
+// 1      4    ..... 4     ......   <-- length
+
 
 func Encode(e entry) []byte {
 	kl, vl := len(e.key), len(e.value)
 	size := kl + vl + 9
 	res := make([]byte, size)
-	binary.LittleEndian.PutUint32(res, uint32(kl))
-	copy(res[4:], e.key)
-	binary.LittleEndian.PutUint32(res[kl+4:], uint32(vl))
-	copy(res[kl+8:], e.value)
-	res[kl+vl+8] = e.isDeleted
+	res[0] = e.kind
+	binary.LittleEndian.PutUint32(res[1:], uint32(kl))
+	copy(res[5:], e.key)
+	binary.LittleEndian.PutUint32(res[kl + 5:], uint32(vl))
+	copy(res[kl + 9:], e.value)
 	return res
 }
 
@@ -43,17 +44,11 @@ func readValue(file io.ReaderAt, offset int64) (string, error) {
 	return string(data), nil
 }
 
-func readIsDeletedFlag(file io.ReaderAt, offset int64) (byte, error) {
-	flag := make([]byte, 1)
-	_, err := file.ReadAt(flag, offset)
-	if err != nil {
-		return 0, err
-	}
-	return flag[0], nil
-}
-
-func ReadEntry(file io.ReaderAt, offset int64) (entry, error) {
-	key, err := readValue(file, offset)
+func ReadEntry(file io.ReaderAt, offset int64) (entry, error) {	
+	kindBuffer := make([]byte, 1)
+	file.ReadAt(kindBuffer, offset)
+	kind := kindBuffer[0]
+	key, err := readValue(file, offset + 1)
 	if err != nil {
 		return entry{}, err
 	}
@@ -61,11 +56,12 @@ func ReadEntry(file io.ReaderAt, offset int64) (entry, error) {
 	if err != nil {
 		return entry{}, err
 	}
-	isDeleted, err := readIsDeletedFlag(file, offset+int64(len(key)+len(value)+8))
+	value, err := readValue(file, offset + int64(len(key)) + 5)
 	if err != nil {
 		return entry{}, err
 	}
-	return entry{key, value, isDeleted}, nil
+
+	return entry{ key, value, kind }, nil
 }
 
 func Iterate(file *os.File) iter.Seq[entry] {

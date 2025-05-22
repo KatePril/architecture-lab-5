@@ -6,7 +6,7 @@ import (
 )
 
 func TestEntry_Encode(t *testing.T) {
-	raw := Encode(entry{"key", "value", 1})
+	raw := Encode(entry{"key", "value", 0})
 	e, _ := ReadEntry(bytes.NewReader(raw), 0)
 	if e.key != "key" {
 		t.Error("incorrect key")
@@ -14,7 +14,7 @@ func TestEntry_Encode(t *testing.T) {
 	if e.value != "value" {
 		t.Error("incorrect value")
 	}
-	if e.isDeleted != 1 {
-		t.Error("incorrect isDeleted flag")
+	if e.kind != 0 {
+		t.Error("incorrect kind")
 	}
 }
