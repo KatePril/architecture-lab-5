@@ -1,6 +1,7 @@
 package datastore
 
 import (
+	"errors"
 	"testing"
 )
 
@@ -34,6 +35,28 @@ func TestDb(t *testing.T) {
 			if value != pair[1] {
 				t.Errorf("Bad value returned expected %s, got %s", pair[1], value)
 			}
+		}
+	})
+
+	t.Run("delete", func(t *testing.T) {
+		key, firstValue, secondValue, thirdValue := "k5", "v1", "v2", "v3"
+		db.Put(key, firstValue)
+		db.Put(key, secondValue)
+		err := db.Delete(key)
+		if err != nil {
+			t.Errorf("Cannot delete %s: %s", key, err)
+		}
+		_, err = db.Get(key)
+		if !errors.Is(err, ErrNotFound) {
+			t.Errorf("Data wasn`t deleted successfully")
+		}
+		db.Put(key, thirdValue)
+		value, err := db.Get(key)
+		if err != nil {
+			t.Errorf("Cannot get %s: %s", key, err)
+		}
+		if value != thirdValue {
+			t.Errorf("Bad value returned expected %s, got %s", thirdValue, value)
 		}
 	})
 

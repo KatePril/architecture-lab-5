@@ -73,6 +73,12 @@ func (database *Db) Close() error {
 func (database *Db) newFile() (*os.File, error) {
 	filename := outFileBase + strconv.Itoa(len(database.files))
 	filepath := filepath.Join(database.directory, filename)
+
+	err := os.MkdirAll(database.directory, 0o700)
+	if err != nil {
+		return nil, err
+	}
+
 	file, err := os.OpenFile(filepath, mode, 0o600)
 	if err != nil {
 		return nil, err
@@ -89,10 +95,26 @@ func (database *Db) Get(key string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	if entry.kind == 1 {
+		return "", ErrNotFound
+	}
 	return entry.value, nil
 }
 
 func (database *Db) Put(key, value string) error {
+	return database.putEntry(key, value, 0)
+}
+
+func (database *Db) Delete(key string) error {
+	_, exists := database.offset[key]
+	if !exists {
+		return nil
+	}
+
+	return database.putEntry(key, "", 1)
+}
+
+func (database *Db) putEntry(key, value string, kind uint8) error {
 	file := database.files[len(database.files)-1]
 	fileStat, err := file.Stat()
 	if err != nil {
@@ -107,7 +129,8 @@ func (database *Db) Put(key, value string) error {
 		database.files = append(database.files, file)
 		fileSize = 0
 	}
-	data := Encode(entry{key, value, 0})
+
+	data := Encode(entry{key, value, kind})
 	_, err = file.WriteAt(data, fileSize)
 	if err != nil {
 		return err
