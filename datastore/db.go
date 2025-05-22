@@ -102,27 +102,7 @@ func (database *Db) Get(key string) (string, error) {
 }
 
 func (database *Db) Put(key, value string) error {
-	file := database.files[len(database.files)-1]
-	fileStat, err := file.Stat()
-	if err != nil {
-		return err
-	}
-	fileSize := fileStat.Size()
-	if fileSize >= maxFileSize {
-		file, err = database.newFile()
-		if err != nil {
-			return err
-		}
-		database.files = append(database.files, file)
-		fileSize = 0
-	}
-	data := Encode(entry{key, value, 0})
-	_, err = file.WriteAt(data, fileSize)
-	if err != nil {
-		return err
-	}
-	database.offset[key] = KeyStorage{file, fileSize}
-	return nil
+	return database.putEntry(key, value, 0)
 }
 
 func (database *Db) Delete(key string) error {
@@ -131,6 +111,10 @@ func (database *Db) Delete(key string) error {
 		return nil
 	}
 
+	return database.putEntry(key, "", 1)
+}
+
+func (database *Db) putEntry(key, value string, kind uint8) error {
 	file := database.files[len(database.files)-1]
 	fileStat, err := file.Stat()
 	if err != nil {
@@ -146,7 +130,7 @@ func (database *Db) Delete(key string) error {
 		fileSize = 0
 	}
 
-	data := Encode(entry{key, "", 1})
+	data := Encode(entry{key, value, kind})
 	_, err = file.WriteAt(data, fileSize)
 	if err != nil {
 		return err
