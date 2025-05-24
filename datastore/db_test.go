@@ -2,6 +2,9 @@ package datastore
 
 import (
 	"errors"
+	"fmt"
+	"math"
+	"os"
 	"testing"
 )
 
@@ -102,6 +105,28 @@ func TestDb(t *testing.T) {
 			if value != expectedValue {
 				t.Errorf("Get(%q) = %q, wanted %q", key, value, expectedValue)
 			}
+		}
+
+	})
+	t.Run("Merging", func(t *testing.T) {
+		tmp := t.TempDir()
+		mergeDb, err := Open(tmp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for i := range 10000000 {
+			kv_pair_index := int(math.Mod(float64(i), 4.0))
+			key := pairs[kv_pair_index][0]
+			value := pairs[kv_pair_index][1]
+			mergeDb.Put(key, value)
+		}
+		dirTree, err := os.ReadDir(tmp)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, e := range dirTree {
+			fmt.Println(e.Name())
 		}
 	})
 }

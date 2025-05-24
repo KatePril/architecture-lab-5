@@ -70,6 +70,11 @@ func (database *Db) Close() error {
 }
 
 func (database *Db) newFile() (*os.File, error) {
+	if len(database.files) >= 3 {
+		if err := database.mergeFiles(); err != nil {
+			return nil, err
+		}
+	}
 	filename := outFileBase + strconv.Itoa(len(database.files))
 	filepath := filepath.Join(database.directory, filename)
 
@@ -125,13 +130,9 @@ func (database *Db) putEntry(entry record) error {
 	}
 	fileSize := fileStat.Size()
 	if fileSize >= maxFileSize {
-		if len(database.files) > 2 {
-			database.mergeFiles()
-		} else {
-			file, err = database.newFile()
-			if err != nil {
-				return err
-			}
+		file, err = database.newFile()
+		if err != nil {
+			return err
 		}
 		database.files = append(database.files, file)
 		fileSize = 0
@@ -147,7 +148,10 @@ func (database *Db) putEntry(entry record) error {
 
 func (database *Db) mergeFiles() error {
 	records := make(map[string]record)
-	filesToMerge := database.files[:3]
+	filesToMerge := []*os.File{}
+	for i := range len(database.files) - 1 {
+		filesToMerge = append(filesToMerge, database.files[i])
+	}
 	for _, file := range filesToMerge {
 		for it := range Iterate(file) {
 			key := it.data.getId()
@@ -156,15 +160,35 @@ func (database *Db) mergeFiles() error {
 	}
 
 	// Закриваємо та видаляємо старі фали
-	for i, file := range filesToMerge {
+	for _, file := range filesToMerge {
 		file.Close()
 		os.Remove(file.Name())
-		database.files[i] = nil
 	}
 
-	for _, rec := range records {
-		database.putEntry(rec)
+	// Створюємо новий файл для злитих даних
+	filename := outFileBase + strconv.Itoa(len(database.files))
+	filepath := filepath.Join(database.directory, filename)
+	mergedFile, err := os.OpenFile(filepath, mode, 0o600)
+	if err != nil {
+		return err
 	}
+
+	// Записуємо всі записи у новий файл та оновлюємо offset
+	newOffset := make(map[string]KeyStorage)
+	var offset int64 = 0
+	for _, rec := range records {
+		data := Encode(rec)
+		_, err := mergedFile.WriteAt(data, offset)
+		if err != nil {
+			return err
+		}
+		newOffset[rec.getId()] = KeyStorage{mergedFile, offset}
+		offset += int64(len(data))
+	}
+
+	// Оновлюємо масив файлів: видаляємо перші 3, додаємо mergedFile
+	database.files = append([]*os.File{mergedFile}, database.files[3:]...)
+	database.offset = newOffset
 
 	return nil
 }
