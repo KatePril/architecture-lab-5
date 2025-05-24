@@ -125,9 +125,13 @@ func (database *Db) putEntry(entry record) error {
 	}
 	fileSize := fileStat.Size()
 	if fileSize >= maxFileSize {
-		file, err = database.newFile()
-		if err != nil {
-			return err
+		if len(database.files) > 2 {
+			database.mergeFiles()
+		} else {
+			file, err = database.newFile()
+			if err != nil {
+				return err
+			}
 		}
 		database.files = append(database.files, file)
 		fileSize = 0
@@ -138,6 +142,30 @@ func (database *Db) putEntry(entry record) error {
 		return err
 	}
 	database.offset[entry.getId()] = KeyStorage{file, fileSize}
+	return nil
+}
+
+func (database *Db) mergeFiles() error {
+	records := make(map[string]record)
+	filesToMerge := database.files[:3]
+	for _, file := range filesToMerge {
+		for it := range Iterate(file) {
+			key := it.data.getId()
+			records[key] = it.data
+		}
+	}
+
+	// Закриваємо та видаляємо старі фали
+	for i, file := range filesToMerge {
+		file.Close()
+		os.Remove(file.Name())
+		database.files[i] = nil
+	}
+
+	for _, rec := range records {
+		database.putEntry(rec)
+	}
+
 	return nil
 }
 
