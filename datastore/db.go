@@ -55,7 +55,7 @@ func Open(directory string) (*Db, error) {
 func (database *Db) recover(file *os.File) error {
 	for value := range Iterate(file) {
 		key := value.data.getId()
-		database.offset[key] = KeyStorage{ file, value.offset }
+		database.offset[key] = KeyStorage{file, value.offset}
 	}
 	return nil
 }
@@ -105,7 +105,7 @@ func (database *Db) Get(key string) (string, error) {
 }
 
 func (database *Db) Put(key, value string) error {
-	return database.putEntry(entryRecord{ key, value })
+	return database.putEntry(entryRecord{key, value})
 }
 
 func (database *Db) Delete(key string) error {
