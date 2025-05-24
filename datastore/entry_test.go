@@ -6,15 +6,16 @@ import (
 )
 
 func TestEntry_Encode(t *testing.T) {
-	raw := Encode(entry{"key", "value", 0})
-	e, _ := ReadEntry(bytes.NewReader(raw), 0)
-	if e.key != "key" {
+	raw := Encode(entryRecord{"key", "value"})
+	record, _, _ := ReadRecord(bytes.NewReader(raw), 0)
+	entry, ok := record.(entryRecord)
+	if !ok {
+		t.Fatal("invalid convertation")
+	}
+	if entry.key != "key" {
 		t.Error("incorrect key")
 	}
-	if e.value != "value" {
+	if entry.value != "value" {
 		t.Error("incorrect value")
-	}
-	if e.kind != 0 {
-		t.Error("incorrect kind")
 	}
 }
