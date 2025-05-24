@@ -70,6 +70,11 @@ func (database *Db) Close() error {
 }
 
 func (database *Db) newFile() (*os.File, error) {
+	if len(database.files) >= 3 {
+		if err := database.mergeFiles(); err != nil {
+			return nil, err
+		}
+	}
 	filename := outFileBase + strconv.Itoa(len(database.files))
 	filepath := filepath.Join(database.directory, filename)
 
@@ -138,6 +143,53 @@ func (database *Db) putEntry(entry record) error {
 		return err
 	}
 	database.offset[entry.getId()] = KeyStorage{file, fileSize}
+	return nil
+}
+
+func (database *Db) mergeFiles() error {
+	records := make(map[string]record)
+	filesToMerge := []*os.File{}
+	for i := range len(database.files) - 1 {
+		filesToMerge = append(filesToMerge, database.files[i])
+	}
+	for _, file := range filesToMerge {
+		for it := range Iterate(file) {
+			key := it.data.getId()
+			records[key] = it.data
+		}
+	}
+
+	// Створюємо новий файл для злитих даних
+	filename := outFileBase + strconv.Itoa(len(database.files))
+	filepath := filepath.Join(database.directory, filename)
+	mergedFile, err := os.OpenFile(filepath, mode, 0o600)
+	if err != nil {
+		return err
+	}
+
+	// Записуємо всі записи у новий файл та оновлюємо offset
+	newOffset := make(map[string]KeyStorage)
+	var offset int64 = 0
+	for _, rec := range records {
+		data := Encode(rec)
+		_, err := mergedFile.WriteAt(data, offset)
+		if err != nil {
+			return err
+		}
+		newOffset[rec.getId()] = KeyStorage{mergedFile, offset}
+		offset += int64(len(data))
+	}
+
+	// Закриваємо та видаляємо старі фали
+	for _, file := range filesToMerge {
+		file.Close()
+		os.Remove(file.Name())
+	}
+
+	// Оновлюємо масив файлів: видаляємо перші 3, додаємо mergedFile
+	database.files = append([]*os.File{mergedFile}, database.files[3:]...)
+	database.offset = newOffset
+
 	return nil
 }
 
