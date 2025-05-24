@@ -159,12 +159,6 @@ func (database *Db) mergeFiles() error {
 		}
 	}
 
-	// Закриваємо та видаляємо старі фали
-	for _, file := range filesToMerge {
-		file.Close()
-		os.Remove(file.Name())
-	}
-
 	// Створюємо новий файл для злитих даних
 	filename := outFileBase + strconv.Itoa(len(database.files))
 	filepath := filepath.Join(database.directory, filename)
@@ -184,6 +178,12 @@ func (database *Db) mergeFiles() error {
 		}
 		newOffset[rec.getId()] = KeyStorage{mergedFile, offset}
 		offset += int64(len(data))
+	}
+
+	// Закриваємо та видаляємо старі фали
+	for _, file := range filesToMerge {
+		file.Close()
+		os.Remove(file.Name())
 	}
 
 	// Оновлюємо масив файлів: видаляємо перші 3, додаємо mergedFile
