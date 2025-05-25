@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"github.com/KatePril/architecture-lab-5/datastore"
 	"net/http"
 	"os"
 	"strconv"
@@ -19,6 +20,14 @@ const confHealthFailure = "CONF_HEALTH_FAILURE"
 
 func main() {
 	h := new(http.ServeMux)
+	db, err := datastore.Open("db")
+	if err != nil {
+		// handle the error properly
+		panic(err)
+	}
+	teamName := "s.k.a.m"
+	currentDate := time.Now().Format("2006-01-02")
+	db.Put(teamName, currentDate)
 
 	h.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("content-type", "text/plain")
