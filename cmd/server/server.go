@@ -6,7 +6,6 @@ import (
 	"github.com/KatePril/architecture-lab-5/datastore"
 	"net/http"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/KatePril/architecture-lab-5/httptools"
@@ -43,18 +42,27 @@ func main() {
 	report := make(Report)
 
 	h.HandleFunc("/api/v1/some-data", func(rw http.ResponseWriter, r *http.Request) {
-		respDelayString := os.Getenv(confResponseDelaySec)
-		if delaySec, parseErr := strconv.Atoi(respDelayString); parseErr == nil && delaySec > 0 && delaySec < 300 {
-			time.Sleep(time.Duration(delaySec) * time.Second)
-		}
+		//respDelayString := os.Getenv(confResponseDelaySec)
+		//if delaySec, parseErr := strconv.Atoi(respDelayString); parseErr == nil && delaySec > 0 && delaySec < 300 {
+		//	time.Sleep(time.Duration(delaySec) * time.Second)
+		//}
 
 		report.Process(r)
+		key := r.URL.Query().Get("key")
+		if key == "" {
+			rw.WriteHeader(http.StatusBadRequest)
+			return
+		}
+
+		value, err := db.Get(key)
+		if err != nil {
+			rw.WriteHeader(http.StatusNotFound)
+			return
+		}
 
 		rw.Header().Set("content-type", "application/json")
 		rw.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(rw).Encode([]string{
-			"1", "2",
-		})
+		_ = json.NewEncoder(rw).Encode(map[string]string{"value": value})
 	})
 
 	h.Handle("/report", report)
