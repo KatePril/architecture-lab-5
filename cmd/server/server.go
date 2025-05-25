@@ -1,9 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
-	"github.com/KatePril/architecture-lab-5/datastore"
 	"net/http"
 	"os"
 	"time"
@@ -14,19 +14,35 @@ import (
 
 var port = flag.Int("port", 8080, "server port")
 
-const confResponseDelaySec = "CONF_RESPONSE_DELAY_SEC"
+const dbServiceURL = "http://localhost:8081/db/"
 const confHealthFailure = "CONF_HEALTH_FAILURE"
+
+func postTeamName() {
+	teamName := "s.k.a.m"
+	currentDate := time.Now().Format("2006-01-02")
+	requestBody := map[string]interface{}{
+		"value": currentDate,
+	}
+	jsonBytes, err := json.Marshal(requestBody)
+	if err != nil {
+		panic(err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, dbServiceURL+teamName, bytes.NewBuffer(jsonBytes))
+	if err != nil {
+		panic(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		panic(err)
+	}
+	defer resp.Body.Close()
+}
 
 func main() {
 	h := new(http.ServeMux)
-	db, err := datastore.Open("db")
-	if err != nil {
-		// handle the error properly
-		panic(err)
-	}
-	teamName := "s.k.a.m"
-	currentDate := time.Now().Format("2006-01-02")
-	db.Put(teamName, currentDate)
 
 	h.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
 		rw.Header().Set("content-type", "text/plain")
@@ -42,11 +58,6 @@ func main() {
 	report := make(Report)
 
 	h.HandleFunc("/api/v1/some-data", func(rw http.ResponseWriter, r *http.Request) {
-		//respDelayString := os.Getenv(confResponseDelaySec)
-		//if delaySec, parseErr := strconv.Atoi(respDelayString); parseErr == nil && delaySec > 0 && delaySec < 300 {
-		//	time.Sleep(time.Duration(delaySec) * time.Second)
-		//}
-
 		report.Process(r)
 		key := r.URL.Query().Get("key")
 		if key == "" {
@@ -54,20 +65,34 @@ func main() {
 			return
 		}
 
-		value, err := db.Get(key)
+		resp, err := http.DefaultClient.Get(dbServiceURL + key)
 		if err != nil {
 			rw.WriteHeader(http.StatusNotFound)
+			return
+		}
+		if resp.StatusCode != http.StatusOK {
+			rw.WriteHeader(http.StatusNotFound)
+			return
+		}
+
+		var result struct {
+			Key   string `json:"key"`
+			Value string `json:"value"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			http.Error(rw, "Failed to decode db response", http.StatusInternalServerError)
 			return
 		}
 
 		rw.Header().Set("content-type", "application/json")
 		rw.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(rw).Encode(map[string]string{"value": value})
+		_ = json.NewEncoder(rw).Encode(map[string]string{"value": result.Value})
 	})
 
 	h.Handle("/report", report)
 
 	server := httptools.CreateServer(*port, h)
 	server.Start()
+	postTeamName()
 	signal.WaitForTerminationSignal()
 }
