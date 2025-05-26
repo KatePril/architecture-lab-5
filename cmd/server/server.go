@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"net/http"
 	"os"
 	"time"
@@ -14,10 +15,33 @@ import (
 
 var port = flag.Int("port", 8080, "server port")
 
-const dbServiceURL = "http://localhost:8081/db/"
-const confHealthFailure = "CONF_HEALTH_FAILURE"
+const (
+	dbServiceURL      = "http://database-server:8091/db/"
+	healthCheckURL    = "http://database-server:8091/health"
+	maxRetryAttempts  = 10
+	confHealthFailure = "CONF_HEALTH_FAILURE"
+)
+
+func waitForServerReady() {
+	for i := 0; i < maxRetryAttempts; i++ {
+		resp, err := http.Get(healthCheckURL)
+		if err == nil && resp.StatusCode == http.StatusOK {
+			resp.Body.Close()
+			fmt.Println("Server is healthy. Proceeding...")
+			return
+		}
+		if resp != nil {
+			resp.Body.Close()
+		}
+		fmt.Printf("Health check failed (attempt %d/%d). Retrying...\n", i+1, maxRetryAttempts)
+		time.Sleep(1 * time.Second)
+	}
+	panic("Server did not become healthy in time")
+}
 
 func postTeamName() {
+	waitForServerReady()
+
 	teamName := "s.k.a.m"
 	currentDate := time.Now().Format("2006-01-02")
 	requestBody := map[string]interface{}{
@@ -28,17 +52,26 @@ func postTeamName() {
 		panic(err)
 	}
 
-	req, err := http.NewRequest(http.MethodPost, dbServiceURL+teamName, bytes.NewBuffer(jsonBytes))
-	if err != nil {
-		panic(err)
-	}
-	req.Header.Set("Content-Type", "application/json")
+	url := dbServiceURL + teamName
+	for i := 0; i < 5; i++ {
+		req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonBytes))
+		if err != nil {
+			panic(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		panic(err)
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			fmt.Printf("POST attempt %d failed: %v\n", i+1, err)
+			time.Sleep(1 * time.Second)
+			continue
+		}
+		defer resp.Body.Close()
+		fmt.Printf("POST succeeded with status: %s\n", resp.Status)
+		return
 	}
-	defer resp.Body.Close()
+
+	panic("Failed to POST after multiple attempts")
 }
 
 func main() {
@@ -93,6 +126,7 @@ func main() {
 
 	server := httptools.CreateServer(*port, h)
 	server.Start()
+	waitForServerReady()
 	postTeamName()
 	signal.WaitForTerminationSignal()
 }

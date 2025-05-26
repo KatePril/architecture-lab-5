@@ -6,19 +6,35 @@ import (
 	"github.com/KatePril/architecture-lab-5/datastore"
 	"github.com/KatePril/architecture-lab-5/httptools"
 	"github.com/KatePril/architecture-lab-5/signal"
+	"log"
 	"net/http"
+	"os"
 	"strings"
 )
 
-var port = flag.Int("port", 8081, "server port")
+var port = flag.Int("port", 8091, "server port")
+
+const confHealthFailure = "CONF_HEALTH_FAILURE"
 
 func main() {
-	db, err := datastore.Open("db")
+	db, err := datastore.Open("db1/")
 	if err != nil {
 		// handle the error properly
 		panic(err)
 	}
 	h := new(http.ServeMux)
+
+	h.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
+		rw.Header().Set("content-type", "text/plain")
+		if failConfig := os.Getenv(confHealthFailure); failConfig == "true" {
+			rw.WriteHeader(http.StatusInternalServerError)
+			_, _ = rw.Write([]byte("FAILURE"))
+		} else {
+			rw.WriteHeader(http.StatusOK)
+			_, _ = rw.Write([]byte("OK"))
+		}
+	})
+
 	h.HandleFunc("/db/", func(w http.ResponseWriter, r *http.Request) {
 		key := strings.TrimPrefix(r.URL.Path, "/db/")
 		if key == "" {
@@ -58,5 +74,6 @@ func main() {
 
 	server := httptools.CreateServer(*port, h)
 	server.Start()
+	log.Printf("Starting server on port %d...", *port)
 	signal.WaitForTerminationSignal()
 }

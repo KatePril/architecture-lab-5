@@ -11,6 +11,14 @@ services:
     ports:
       - "8090:8090"
 
+  database-server:
+    build: .
+    command: "db"
+    networks:
+      - servers
+    ports:
+      - "8091:8091"
+
   server1:
     build: .
     networks:
