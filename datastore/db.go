@@ -169,12 +169,16 @@ func (database *Db) mergeFiles() error {
 	var offset int64 = 0
 	for _, rec := range records {
 		data := Encode(rec)
-		_, err := mergedFile.WriteAt(data, offset)
-		if err != nil {
-			return err
+		if data[0] == DELETE_TYPE {
+			delete(newOffset, rec.getId())
+		} else {
+			_, err := mergedFile.WriteAt(data, offset)
+			if err != nil {
+				return err
+			}
+			newOffset[rec.getId()] = KeyStorage{mergedFile, offset}
+			offset += int64(len(data))
 		}
-		newOffset[rec.getId()] = KeyStorage{mergedFile, offset}
-		offset += int64(len(data))
 	}
 
 	// Закриваємо та видаляємо старі фали
