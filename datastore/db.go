@@ -148,49 +148,63 @@ func (database *Db) putEntry(entry record) error {
 
 func (database *Db) mergeFiles() error {
 	records := make(map[string]record)
-	filesToMerge := database.files[:len(database.files)-1]
-	for _, file := range filesToMerge {
+
+	for _, file := range database.files {
 		for it := range Iterate(file) {
 			key := it.data.getId()
 			records[key] = it.data
 		}
 	}
 
-	// Створюємо новий файл для злитих даних
-	filename := outFileBase + strconv.Itoa(len(database.files))
-	filepath := filepath.Join(database.directory, filename)
-	mergedFile, err := os.OpenFile(filepath, mode, 0o600)
+	var currentFile *os.File
+	var currentSize int64
+	var newFiles []*os.File
+	fileIndex := 0
+
+	createNewFile := func() (*os.File, error) {
+		filename := outFileBase + strconv.Itoa(fileIndex)
+		fileIndex++
+		filepath := filepath.Join(database.directory, filename)
+		return os.OpenFile(filepath, mode, 0o600)
+	}
+
+	var err error
+	currentFile, err = createNewFile()
 	if err != nil {
 		return err
 	}
-
-	// Записуємо всі записи у новий файл та оновлюємо offset
+	newFiles = append(newFiles, currentFile)
+	currentSize = 0
 	newOffset := make(map[string]KeyStorage)
-	var offset int64 = 0
+
 	for _, rec := range records {
 		data := Encode(rec)
-		if data[0] == DELETE_TYPE {
-			delete(newOffset, rec.getId())
-		} else {
-			_, err := mergedFile.WriteAt(data, offset)
+		if currentSize+int64(len(data)) > maxFileSize {
+			currentFile, err = createNewFile()
 			if err != nil {
 				return err
 			}
-			newOffset[rec.getId()] = KeyStorage{mergedFile, offset}
-			offset += int64(len(data))
+			newFiles = append(newFiles, currentFile)
+			currentSize = 0
+		}
+		if data[0] != DELETE_TYPE {
+			_, err := currentFile.WriteAt(data, currentSize)
+			if err != nil {
+				return err
+			}
+
+			newOffset[rec.getId()] = KeyStorage{currentFile, currentSize}
+			currentSize += int64(len(data))
 		}
 	}
 
-	// Закриваємо та видаляємо старі фали
-	for _, file := range filesToMerge {
+	for _, file := range database.files {
 		file.Close()
 		os.Remove(file.Name())
 	}
 
-	// Оновлюємо масив файлів: видаляємо перші 3, додаємо mergedFile
-	database.files = append([]*os.File{mergedFile}, database.files[3:]...)
+	database.files = newFiles
 	database.offset = newOffset
-
 	return nil
 }
 
