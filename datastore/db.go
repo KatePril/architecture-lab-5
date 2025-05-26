@@ -70,11 +70,6 @@ func (database *Db) Close() error {
 }
 
 func (database *Db) newFile() (*os.File, error) {
-	if len(database.files) >= 3 {
-		if err := database.mergeFiles(); err != nil {
-			return nil, err
-		}
-	}
 	filename := outFileBase + strconv.Itoa(len(database.files))
 	filepath := filepath.Join(database.directory, filename)
 
@@ -130,6 +125,11 @@ func (database *Db) putEntry(entry record) error {
 	}
 	fileSize := fileStat.Size()
 	if fileSize >= maxFileSize {
+		if len(database.files) >= 3 {
+			if err := database.mergeFiles(); err != nil {
+				return err
+			}
+		}
 		file, err = database.newFile()
 		if err != nil {
 			return err
@@ -148,10 +148,7 @@ func (database *Db) putEntry(entry record) error {
 
 func (database *Db) mergeFiles() error {
 	records := make(map[string]record)
-	filesToMerge := []*os.File{}
-	for i := range len(database.files) - 1 {
-		filesToMerge = append(filesToMerge, database.files[i])
-	}
+	filesToMerge := database.files[:len(database.files)-1]
 	for _, file := range filesToMerge {
 		for it := range Iterate(file) {
 			key := it.data.getId()
