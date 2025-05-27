@@ -6,6 +6,7 @@ services:
     networks:
       - servers
     depends_on:
+      - database-server
       - server1
       - server2
       - server3
