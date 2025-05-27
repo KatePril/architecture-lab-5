@@ -3,8 +3,10 @@ package main
 import (
 	"encoding/json"
 	"flag"
+	"fmt"
 	"github.com/KatePril/architecture-lab-5/datastore"
 	"github.com/KatePril/architecture-lab-5/httptools"
+	"github.com/KatePril/architecture-lab-5/safestorage"
 	"github.com/KatePril/architecture-lab-5/signal"
 	"log"
 	"net/http"
@@ -19,9 +21,11 @@ const confHealthFailure = "CONF_HEALTH_FAILURE"
 func main() {
 	db, err := datastore.Open("db1/")
 	if err != nil {
-		// handle the error properly
-		panic(err)
+		fmt.Println("Error opening database: ", err)
+		os.Exit(1)
 	}
+	ss := safestorage.Init(db)
+
 	h := new(http.ServeMux)
 
 	h.HandleFunc("/health", func(rw http.ResponseWriter, r *http.Request) {
@@ -43,7 +47,7 @@ func main() {
 		}
 		switch r.Method {
 		case http.MethodGet:
-			value, getError := db.Get(key)
+			value, getError := ss.Get(key)
 			if getError != nil {
 				http.Error(w, "Key not found", http.StatusNotFound)
 				return
@@ -65,7 +69,7 @@ func main() {
 				return
 			}
 
-			db.Put(key, body.Value)
+			ss.Put(key, body.Value)
 			w.WriteHeader(http.StatusOK)
 		default:
 			http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
