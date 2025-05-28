@@ -125,6 +125,11 @@ func (database *Db) putEntry(entry record) error {
 	}
 	fileSize := fileStat.Size()
 	if fileSize >= maxFileSize {
+		if len(database.files) >= 3 {
+			if err := database.mergeFiles(); err != nil {
+				return err
+			}
+		}
 		file, err = database.newFile()
 		if err != nil {
 			return err
@@ -138,6 +143,68 @@ func (database *Db) putEntry(entry record) error {
 		return err
 	}
 	database.offset[entry.getId()] = KeyStorage{file, fileSize}
+	return nil
+}
+
+func (database *Db) mergeFiles() error {
+	records := make(map[string]record)
+
+	for _, file := range database.files {
+		for it := range Iterate(file) {
+			key := it.data.getId()
+			records[key] = it.data
+		}
+	}
+
+	var currentFile *os.File
+	var currentSize int64
+	var newFiles []*os.File
+	fileIndex := 0
+
+	createNewFile := func() (*os.File, error) {
+		filename := outFileBase + strconv.Itoa(fileIndex)
+		fileIndex++
+		filepath := filepath.Join(database.directory, filename)
+		return os.OpenFile(filepath, mode, 0o600)
+	}
+
+	var err error
+	currentFile, err = createNewFile()
+	if err != nil {
+		return err
+	}
+	newFiles = append(newFiles, currentFile)
+	currentSize = 0
+	newOffset := make(map[string]KeyStorage)
+
+	for _, rec := range records {
+		data := Encode(rec)
+		if currentSize+int64(len(data)) > maxFileSize {
+			currentFile, err = createNewFile()
+			if err != nil {
+				return err
+			}
+			newFiles = append(newFiles, currentFile)
+			currentSize = 0
+		}
+		if data[0] != DELETE_TYPE {
+			_, err := currentFile.WriteAt(data, currentSize)
+			if err != nil {
+				return err
+			}
+
+			newOffset[rec.getId()] = KeyStorage{currentFile, currentSize}
+			currentSize += int64(len(data))
+		}
+	}
+
+	for _, file := range database.files {
+		file.Close()
+		os.Remove(file.Name())
+	}
+
+	database.files = newFiles
+	database.offset = newOffset
 	return nil
 }
 
