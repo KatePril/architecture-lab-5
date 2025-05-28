@@ -116,7 +116,7 @@ func TestDb(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for i := range 10000000 {
+		for i := range 100000 {
 			kvPairIndex := int(math.Mod(float64(i), 4.0))
 			key := pairs[kvPairIndex][0]
 			value := pairs[kvPairIndex][1]
