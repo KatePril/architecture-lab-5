@@ -17,9 +17,10 @@ import (
 var port = flag.Int("port", 8091, "server port")
 
 const confHealthFailure = "CONF_HEALTH_FAILURE"
+const maxFileSize = 10 * 1024 * 1024
 
 func main() {
-	db, err := datastore.Open("db1/")
+	db, err := datastore.Open("db1/", maxFileSize)
 	if err != nil {
 		fmt.Println("Error opening database: ", err)
 		os.Exit(1)

@@ -19,16 +19,18 @@ type KeyStorage struct {
 }
 
 type Db struct {
-	directory string
-	files     []*os.File
-	offset    map[string]KeyStorage
+	directory   string
+	files       []*os.File
+	offset      map[string]KeyStorage
+	maxFileSize int64
 }
 
-func Open(directory string) (*Db, error) {
+func Open(directory string, maxFileSize int64) (*Db, error) {
 	database := &Db{
-		directory: directory,
-		files:     make([]*os.File, 0),
-		offset:    make(map[string]KeyStorage),
+		directory:   directory,
+		files:       make([]*os.File, 0),
+		offset:      make(map[string]KeyStorage),
+		maxFileSize: maxFileSize,
 	}
 	pattern := filepath.Join(directory, outFileBase+"*")
 	files, _ := filepath.Glob(pattern)
@@ -124,7 +126,7 @@ func (database *Db) putEntry(entry record) error {
 		return err
 	}
 	fileSize := fileStat.Size()
-	if fileSize >= maxFileSize {
+	if fileSize >= database.maxFileSize {
 		if len(database.files) >= 3 {
 			if err := database.mergeFiles(); err != nil {
 				return err
@@ -179,7 +181,7 @@ func (database *Db) mergeFiles() error {
 
 	for _, rec := range records {
 		data := Encode(rec)
-		if currentSize+int64(len(data)) > maxFileSize {
+		if currentSize+int64(len(data)) > database.maxFileSize {
 			currentFile, err = createNewFile()
 			if err != nil {
 				return err

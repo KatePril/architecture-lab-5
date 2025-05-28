@@ -8,9 +8,11 @@ import (
 	"testing"
 )
 
+const maxTestFileSize = 4 * 1024
+
 func TestDb(t *testing.T) {
 	tmp := t.TempDir()
-	db, err := Open(tmp)
+	db, err := Open(tmp, maxTestFileSize)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +89,7 @@ func TestDb(t *testing.T) {
 		if err := db.Close(); err != nil {
 			t.Fatal(err)
 		}
-		db, err = Open(tmp)
+		db, err = Open(tmp, maxTestFileSize)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -108,16 +110,16 @@ func TestDb(t *testing.T) {
 		}
 
 	})
-	t.Run("Merging", func(t *testing.T) {
+	t.Run("merging", func(t *testing.T) {
 		tmp := t.TempDir()
-		mergeDb, err := Open(tmp)
+		mergeDb, err := Open(tmp, maxTestFileSize)
 		if err != nil {
 			t.Fatal(err)
 		}
 		for i := range 10000000 {
-			kv_pair_index := int(math.Mod(float64(i), 4.0))
-			key := pairs[kv_pair_index][0]
-			value := pairs[kv_pair_index][1]
+			kvPairIndex := int(math.Mod(float64(i), 4.0))
+			key := pairs[kvPairIndex][0]
+			value := pairs[kvPairIndex][1]
 			mergeDb.Put(key, value)
 		}
 		dirTree, err := os.ReadDir(tmp)
